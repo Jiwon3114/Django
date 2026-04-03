@@ -37,9 +37,21 @@
                     </ul>
                     <div class="d-flex">
                         <ul class="navbar-nav me-auto mb-2 mb-md-0">
-                            <li class="nav-item">
-                                <a class="nav-link" href="#">로그인</a>
-                            </li>
+                            {% if user.is_authenticated %}
+                                <li class="nav-item">
+                                    <a class="nav-link" href="{% url 'auth:profile' %}">{{ user.first_name }} ({{ user.username }})</a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link" href="{% url 'auth:logout' %}">로그아웃</a>
+                                </li>
+                            {% else %}
+                                <li class="nav-item">
+                                    <a class="nav-link" href="{% url 'auth:login' %}">로그인</a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link" href="{% url 'auth:register' %}">회원가입</a>
+                                </li>
+                            {% endif %}
                         </ul>
                     </div>
                 </div>
@@ -94,7 +106,17 @@
     <!-- STATIC JS -->
     <script src="{% static 'script.js' %}"></script>
     <script>
-        /* 자바 스크립트 */
+        $(document).ready(function() {
+            // 모든 AJAX 요청에 CSRF 토큰을 자동으로 포함
+            $.ajaxSetup({
+                beforeSend: function(xhr, settings) {
+                    if (!this.crossDomain) {
+                        xhr.setRequestHeader("X-CSRFToken",
+                            document.querySelector('[name=csrfmiddlewaretoken]').value);
+                    }
+                }
+            });
+        });
     </script>
     {% block script %}{% endblock %}
 </body>

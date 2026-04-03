@@ -1,5 +1,3 @@
-# from django.http import HttpResponse
-
 import os
 import uuid
 from mysite import settings
@@ -13,16 +11,20 @@ from django.core.paginator import Paginator
 from django.db.models import Q
 from django.contrib.auth.hashers import make_password, check_password
 
+from django.contrib.auth.decorators import login_required
+
 from .models import Posts
 from .form import PostCreateForm
 from .form2 import PostUpdateForm
 
-# Create your views here.
+from comments.models import Comments
+
 # 게시글 등록
 # def create_post(request):
 #     return HttpResponse('게시글 등록')
 
 # 게시글 등록
+@login_required(login_url='auth:login')
 def create_post(request):
     form=PostCreateForm()
 
@@ -31,7 +33,9 @@ def create_post(request):
 
         if form.is_valid():
             post=form.save(commit=False)
-            post.password=make_password(form.cleaned_data['password']) 
+            # post.password=make_password(form.cleaned_data['password'])
+            post.created_by = request.user
+            post.updated_by = request.user 
             post.save()
 
             # 파일 업로드
@@ -59,36 +63,47 @@ def create_post(request):
         else:
             messages.error(request, '게시글 등록에 실패했습니다')
     else:
-            # 👇 이 줄을 추가해! (장고가 거절한 진짜 이유를 터미널에 출력해 줌)
-            print("🚨 등록 실패 원인:", form.errors)
-    return render(request, 'posts/create.html', {'form': form})         
+        return render(request, 'posts/create.html', {'form': form})         
 
 # 게시글 보기
 # def get_post(request, post_id):
 #     return HttpResponse('게시글 보기')
 
 # 게시글 보기
+@login_required(login_url='auth:login')
 def get_post(request, post_id):
     post=get_object_or_404(Posts, id=post_id)
-    return render(request, 'posts/read.html', {'post': post})
+    # return render(request, 'posts/read.html', {'post': post})
+    comments = Comments.objects.filter(post=post_id).order_by('-created_at')
+    return render(request, 'posts/read.html', {'post': post, 'comments': comments})
 
 # 게시글 수정
 # def update_post(request, post_id):
 #     return HttpResponse('게시글 수정')
 
 # 게시글 수정
+@login_required(login_url='auth:login')
 def update_post(request, post_id):
     post = get_object_or_404(Posts, id=post_id)
-    post_password = post.password
+    
+    if post.created_by != request.user:
+        messages.error(request, '게시글을 수정 권한이 없습니다')
+        return redirect('posts:read', post_id=post_id)
+    
+    # post_password = post.password
     form = PostUpdateForm(instance=post)
 
     if request.method == 'POST':
         form = PostUpdateForm(request.POST, request.FILES, instance=post)
+    
         if form.is_valid():
-            if check_password(form.cleaned_data['password'], post_password):
-                post = form.save(commit=False)
-                
-                post.password = make_password(form.cleaned_data['password'])
+            # if check_password(form.cleaned_data['password'], post_password):
+            #     post = form.save(commit=False)
+            #     post.password = make_password(form.cleaned_data['password'])
+
+                post.title = form.cleaned_data['title']
+                post.content = form.cleaned_data['content']
+                post.updated_by = request.user
                 post.save()
 
                 # 파일 삭제 로직
@@ -130,8 +145,8 @@ def update_post(request, post_id):
 
                 messages.success(request, '게시글이 수정되었습니다.')
                 return redirect('posts:read', post_id=post.id)
-            else:
-                messages.error(request, '비밀번호가 일치하지 않습니다.')
+        #     else:
+        #         messages.error(request, '비밀번호가 일치하지 않습니다.')
         else:
             messages.error(request, '게시글 수정에 실패했습니다.')
 
@@ -142,12 +157,17 @@ def update_post(request, post_id):
 #     return HttpResponse('게시글 삭제')
 
 # 게시글 삭제
+@login_required(login_url='auth:login')
 def delete_post(request, post_id):
     post = get_object_or_404(Posts, id=post_id)
-    password = request.POST.get('password')
+    # password = request.POST.get('password')
+
+    if post.created_by != request.user:
+        messages.error(request, '게시글 삭제 권한이 없습니다')
+        return redirect('posts:read', post_id=post_id)
 
     if request.method == 'POST':
-        if check_password(password, post.password):
+        # if check_password(password, post.password):
             # 파일 삭제
             if post.filename:
                 file_path=os.path.join(settings.MEDIA_ROOT, 'posts', str(post.id), str(post.filename))
@@ -157,15 +177,16 @@ def delete_post(request, post_id):
             post.delete()
             messages.success(request, '게시글이 삭제되었습니다.')
             return redirect('posts:list')
-        else:
-            messages.error(request, '비밀번호가 일치하지 않습니다.')
-            return redirect('posts:read', post_id=post.id)
+        # else:
+        #     messages.error(request, '비밀번호가 일치하지 않습니다.')
+        #     return redirect('posts:read', post_id=post.id)
 
 # 게시글 목록
 # def get_posts(request):
 #     return HttpResponse('게시글 목록')
 
 # 게시글 목록
+@login_required(login_url='auth:login')
 def get_posts(request):
     page = request.GET.get('page', '1')
     posts = Posts.objects.all().order_by('-created_at')
@@ -189,10 +210,14 @@ def get_posts(request):
             posts = posts.filter(
                 Q(content__contains=searchKeyword)
             )
-        elif searchType == 'username':
+        # elif searchType == 'username':
+        #     posts = posts.filter(
+        #         Q(username__contains=searchKeyword)
+        #     )    
+        elif searchType == 'full_name':
             posts = posts.filter(
-                Q(username__contains=searchKeyword)
-            )    
+                Q(created_by__first_name__contains=searchKeyword)
+            )
 
     # 페이지네이션
     paginator = Paginator(posts, 10)
@@ -214,6 +239,7 @@ def get_posts(request):
     })
 
 # 첨부 파일 다운로드
+@login_required(login_url='auth:login')
 def download_file(requst, post_id):
     post = get_object_or_404(Posts, id=post_id)
     file_path = os.path.join(settings.MEDIA_ROOT, 'posts', str(post.id), str(post.filename))
